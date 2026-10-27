@@ -3,9 +3,75 @@ title: "Data Management"
 author: "Kiera Murray"
 format: html
 ---
+```{r}
+# Load packages
+library(tidyverse)
+```
 
+```{r}
+# Load in the raw data
+load("data/acupuncture_data_reduced.RData")
+acupunc_full <- data
+```
 
+```{r}
+# Recode categorical variables as factor
 
+# sex: 2 values, 1=female, 0=male
+acupunc_full$sex <- factor(data$sex, 
+                           levels = c(1, 0), 
+                           labels = c("female", "male"))
+
+# migraine: 2 values, 1=migraine, 0=tension-type
+acupunc_full$migraine <- factor(data$migraine, 
+                                levels = c(1, 0), 
+                                labels = c("migraine", "tension-type"))
+
+# group: 2 values, 1=acupuncture, 0=control
+acupunc_full$group <- factor(data$group, 
+                             levels = c(1, 0), 
+                             labels = c("acupuncture", "control"))
+
+# acupuncturist: 12 unique values, numbered 1 to 12
+acupuncturist_int <- seq(min(data$acupuncturist),
+                         max(data$acupuncturist)) # vector of numeric values
+acupuncturist_str <- as.character(acupuncturist_int) # vector of character values
+acupunc_full$acupuncturist <- factor(data$acupuncturist, 
+                                     levels = acupuncturist_int, 
+                                     labels = acupuncturist_str)
+
+# GP: 36 unique integer values; not numbered in an obvious way
+gp_int <- seq(min(data$practice_id), 
+              max(data$practice_id)) # vector of potential numeric values
+gp_str <- as.character(gp_int) # vector of potential character values
+acupunc_full$gp <- factor(data$practice_id, 
+                          levels = gp_int, 
+                          labels = gp_str)
+
+# patient ID: 401 unique integer values; not numbered in an obvious way
+id_int <- seq(min(data$id), 
+              max(data$id)) # vector of potential numeric values
+id_str <- as.character(id_int) # vector of potential character values
+acupunc_full$id <- factor(data$id, 
+                          levels = id_int, 
+                          labels = id_str)
+```
+
+```{r}
+# Drop redundant variable practice_id (the numeric version of GP)
+acupunc_full <- acupunc_full %>% select(-practice_id)
+
+# Check the recoded data
+summary(acupunc_full)
+```
+
+```{r}
+# Filter out tension-type patients
+acupunc <- acupunc_full %>% filter(migraine == "migraine")
+
+# Check the filtered data - this will be used for analysis
+summary(acupunc)
+```
 
 
 
