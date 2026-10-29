@@ -1,0 +1,103 @@
+---
+title: "Exploratory Data Analysis"
+author: "Kiera Murray"
+format: html
+---
+
+# Part 1: EDA on the original data
+
+```{r}
+# Summarize the original data
+summary(acupunc_full)
+```
+
+```{r}
+# How many patients to each acupuncturist?
+
+# calculate and print
+patients_per_acu_full <- acupunc_full %>% 
+  filter(group == "acupuncture") %>%  # consider only patients who received acupuncture
+  group_by(acupuncturist) %>% summarize(n_patients = n())
+patients_per_acu_full
+
+# quantiles
+quantile(patients_per_acu_full$n_patients)
+```
+12 total acupuncturists, ranging from 1 to 45 patients per acupuncturist.
+
+```{r}
+# How many patients to each GP?
+
+# calculate and print
+patients_per_gp_full <- acupunc_full %>% 
+  group_by(gp) %>% summarize(n_patients = n())
+patients_per_gp_full
+
+# quantiles
+quantile(patients_per_gp_full$n_patients)
+```
+36 total GPs, ranging from 1 to 43 patients per GP.
+
+```{r}
+# How many patients by sex and headache type?
+acupunc_full %>% group_by(sex, migraine) %>% summarize(n())
+```
+
+
+
+# Part 2: Univariate analysis on the migraine-only data
+
+## General summary
+```{r}
+# Summarize the data
+summary(acupunc)
+```
+
+## Acupuncturist breakdown: numbers of patients and GPs
+```{r}
+# How many patients and GPs to each acupuncturist?
+patients_per_acu <- acupunc %>% 
+  
+  # consider only patients who received acupuncture
+  filter(group == "acupuncture") %>%  
+  
+  # first, get number of patients per acupuncturist/GP combination
+  group_by(acupuncturist, gp) %>% 
+  summarize(obs = n()) %>% 
+  
+  # then collapse to number of patients and number of GPs
+  group_by(acupuncturist) %>% 
+  summarize(n_patients = sum(obs), n_GPs = n())
+
+# View results
+patients_per_acu
+```
+```{r}
+# Quantiles of n_patients per acupuncturist
+quantile(patients_per_acu$n_patients)
+```
+
+```{r}
+# Quantiles of n_GPs per acupuncturist
+quantile(patients_per_acu$n_GPs)
+```
+
+12 total acupuncturists, ranging from 1 to 42 patients per acupuncturist and 1 to 5 GPs per acupuncturist.
+
+
+## GP breakdown: numbers of patients (total and per group) and assigned acupuncturist
+```{r}
+# How many patients to each GP?
+patients_per_gp <- acupunc %>% 
+  group_by(gp, acupuncturist) %>% summarize(n_patients = n())
+
+patients_per_gp
+
+```
+35 total GPs, ranging from 1 to 41 patients per GP.
+
+
+
+
+
+
