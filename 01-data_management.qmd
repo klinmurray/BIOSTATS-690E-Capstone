@@ -5,12 +5,12 @@ format: html
 ---
 ```{r}
 # Load packages
-library(tidyverse)
+pacman::p_load(tidyverse)
 ```
 
 ```{r}
 # Load in the raw data
-load("data/acupuncture_data_reduced.RData")
+load("data/raw/acupuncture_data_reduced.RData")
 acupunc_full <- data
 ```
 
@@ -63,6 +63,9 @@ acupunc_full <- acupunc_full %>% select(-practice_id)
 
 # Check the recoded data
 summary(acupunc_full)
+
+# Save as .RData to data/processed
+save(acupunc_full, file = "data/processed/acupunc_full.RData")
 ```
 
 ```{r}
@@ -71,10 +74,9 @@ acupunc <- acupunc_full %>% filter(migraine == "migraine")
 
 # Check the filtered data - this will be used for analysis
 summary(acupunc)
+
+# Save as .RData to data/processed
+save(acupunc, file = "data/processed/acupunc.RData")
 ```
-
-
-
-
 
 
