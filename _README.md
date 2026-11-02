@@ -23,15 +23,31 @@ that accompanied the original data download.
 The subfolder `raw` contains the original data download, 
 exactly as provided by the online source.
 
-The subfolder `processed` contains the following data files:
+The subfolder `processed` contains data files that have been modified from the 
+original in `raw`. These files are used in my analysis. Contents:
 - `acupunc_full.RData`: the original raw data, but the variable `practice_id` 
   has been renamed `gp`, and the variables `id`, `sex`, `migraine`, 
   `acupuncturist`, `gp`, and `group` have been converted from numeric type into 
-  factor type. Contains 14 variables and 401 observations. 
-  Created in 01-data_management.qmd
+  factor type. Contains 14 variables and 401 observations. Created by 
+  `scripts/01-data_management.qmd`.
 - `acupunc.RData`: the same as `acupunc_full.RData` but filtered to include only
   subjects with migraine (as opposed to tension-type headache). Contains 
-  14 variables and 377 observations. Created in 01-data_management.qmd
+  14 variables and 377 observations. Created by 
+  `scripts/01-data_management.qmd`.
+
+## The `scripts` folder
+
+This folder contains the following scripts:
+
+- `01-data_management.qmd`: converts the original raw data into better formats 
+  for analysis, creating the `data` files `processed/acupunc_full.RData` & 
+  `processed/acupunc.RData`. These data files are then used in `02-EDA.qmd`.
+- `02-EDA.qmd`: Exploratory data analysis on both the full data 
+  (i.e. `processed/acupunc_full.RData`) 
+  and migraine patients only (i.e. `processed/acupunc.RData`), 
+  with more focus given to the latter.
+ 
+
 
 
 

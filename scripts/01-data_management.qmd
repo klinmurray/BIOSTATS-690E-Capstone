@@ -1,16 +1,30 @@
 ---
 title: "Data Management"
 author: "Kiera Murray"
-format: html
+format: pdf
 ---
 ```{r}
 # Load packages
-pacman::p_load(tidyverse)
+pacman::p_load(tidyverse, pacman, grateful, here, usethis)
+```
+
+```{r}
+# Setup
+
+# Set blank slate
+usethis::use_blank_slate(scope = "user")
+
+# Citations
+grateful::cite_packages(pkgs='Session', output='paragraph', out.dir='.')
+print(paste("operating system: ", sessionInfo()$running))
+
+# Check working directory
+here()
 ```
 
 ```{r}
 # Load in the raw data
-load("data/raw/acupuncture_data_reduced.RData")
+load(here("data", "raw", "acupuncture_data_reduced.RData"))
 acupunc_full <- data
 ```
 
@@ -65,7 +79,7 @@ acupunc_full <- acupunc_full %>% select(-practice_id)
 summary(acupunc_full)
 
 # Save as .RData to data/processed
-save(acupunc_full, file = "data/processed/acupunc_full.RData")
+save(acupunc_full, file = here("data", "processed", "acupunc_full.RData"))
 ```
 
 ```{r}
@@ -76,7 +90,7 @@ acupunc <- acupunc_full %>% filter(migraine == "migraine")
 summary(acupunc)
 
 # Save as .RData to data/processed
-save(acupunc, file = "data/processed/acupunc.RData")
+save(acupunc, file = here("data", "processed", "acupunc.RData"))
 ```
 
 
