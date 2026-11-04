@@ -3,14 +3,15 @@ title: "Data Management"
 author: "Kiera Murray"
 format: pdf
 ---
+
+# Setup
+
 ```{r}
 # Load packages
 pacman::p_load(tidyverse, pacman, grateful, here, usethis)
 ```
 
 ```{r}
-# Setup
-
 # Set blank slate
 usethis::use_blank_slate(scope = "user")
 
@@ -22,15 +23,19 @@ print(paste("operating system: ", sessionInfo()$running))
 here()
 ```
 
+# Data processing
+
+## Load raw data
+
 ```{r}
 # Load in the raw data
 load(here("data", "raw", "acupuncture_data_reduced.RData"))
 acupunc_full <- data
 ```
 
-```{r}
-# Recode categorical variables as factor
+## Recode categorical variables as factor
 
+```{r}
 # sex: 2 values, 1=female, 0=male
 acupunc_full$sex <- factor(data$sex, 
                            levels = c(1, 0), 
@@ -71,6 +76,8 @@ acupunc_full$id <- factor(data$id,
                           labels = id_str)
 ```
 
+## Save the full recoded data
+
 ```{r}
 # Drop redundant variable practice_id (the numeric version of GP)
 acupunc_full <- acupunc_full %>% select(-practice_id)
@@ -81,6 +88,8 @@ summary(acupunc_full)
 # Save as .RData to data/processed
 save(acupunc_full, file = here("data", "processed", "acupunc_full.RData"))
 ```
+
+## Save the migraine-only recoded data
 
 ```{r}
 # Filter out tension-type patients
