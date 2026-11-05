@@ -1,0 +1,187 @@
+---
+title: "Power Calculation"
+author: "Kiera Murray"
+format: pdf
+---
+
+# Part 1: Coding & Statistical Analysis
+
+## 1.1 Setup
+
+```{r}
+# Load packages
+library(pwr)
+library(presize)
+library(tidyverse)
+```
+
+```{r}
+# Load data
+load("acupuncture_data_reduced.RData")
+acupunc <- data
+
+# Recode certain variables as factor
+acupunc$sex <- factor(data$sex, 
+                levels = c(1, 0), 
+                labels = c("female", "male"))
+acupunc$migraine <- factor(data$migraine, 
+                levels = c(1, 0), 
+                labels = c("migraine", "tension-type"))
+acupunc$group <- factor(data$group, 
+                levels = c(1, 0), 
+                labels = c("acupuncture", "control"))
+acupunc$acupuncturist <- factor(data$acupuncturist, 
+                levels = c(1,2,3,4,5,6,7,8,9,10,11,12), 
+                labels = c("1","2","3","4","5","6","7","8","9","10","11","12"))
+gp_int <- seq(min(data$practice_id), max(data$practice_id))
+gp_str <- as.character(gp_int)
+acupunc$practice_id <- factor(data$practice_id, 
+                levels = gp_int, 
+                labels = gp_str)
+
+# Keep only migraine patients
+analysis_data <- acupunc %>% 
+  filter(migraine == "migraine") # exclude 24 patients with tension-type headache
+```
+
+## 1.2 Recreating the original paper's power analysis
+
+The original paper's protocol states:
+
+*A sample size calculation was undertaken using values adapted from Vincent's (1989) trial . . . We assumed that the control group would experience a change in pain score as reported for the placebo group; inflated standard deviations by 25% to reflect the wider inclusion criteria in our trial; a power of 90%; an alpha of 5% and a 25% drop-out rate. We used a minimal, clinically significant difference of 75% calculated as follows: in the Vincent trial, the pain score in the control group reduced by 20%; in our estimation, a reduction of 35% would be the minimum clinically relevant effect of acupuncture treatment, equivalent to a 75% greater decrease in pain in the acupuncture groupr compared to controls.*
+
+*The actual values used in the sample size calculation were: control mean 30; control standard deviation 53; experimental mean 52; experimental standard deviation 64; alpha 0.05; beta 0.1. The result of the calculation is that 288 evaluable subjects are needed or 394 subjects before drop-out, a figure which is appropriately rounded to 400.*
+
+Below, I attempt to replicate the protocol analysis using a t-test approach:
+
+```{r}
+control_mean <- 30
+experimental_mean <- 52
+
+control_sd <- 53
+experimental_sd <- 64
+
+alpha <- 0.05
+power <- 0.90
+
+mean_difference <- experimental_mean - control_mean
+
+pooled_sd <- sqrt(
+  (control_sd^2 + experimental_sd^2) / 2
+)
+
+effect_size <- mean_difference / pooled_sd
+```
+
+pooled standard deviation: 58.76
+
+effect size: 0.374
+
+```{r}
+sample_size <- pwr.t.test(
+  d = effect_size,
+  sig.level = alpha,
+  power = power,
+  type = "two.sample",
+  alternative = "two.sided"
+)
+
+sample_size
+```
+
+151 evaluable patients are needed in each arm, or 302 total. Accounting for a 25% dropout rate, 
+
+```{r}
+151 / (1 - 0.25)
+```
+
+202 patients are needed in each arm, or 404 total, before drop-out.
+
+I was unable to reproduce the paper's results of 288 evaluable subjects or 394 subjects before drop-out.
+
+Even the paper is inconsistent, since 288 accounting for 25% drop-out is not 394:
+
+```{r}
+288 / (1 - 0.25)
+```
+
+## 1.3 ICC analysis for my mixed model
+```{r}
+acupunc_acupuncture_only <- acupunc %>% 
+  filter(group == "acupuncture")
+```
+
+```{r}
+# Calculate ICC confidence interval bounds
+
+# Define rho values to analyze
+length <- 101 # number of points in the CI vector
+rhos <- seq(from=0, to=1, length.out=length) # look at rho values from 0 to 1
+
+# Get CI widths for rho using prec_icc()
+# based on my data: k = 3, n = 377
+conf_widths <- rep(-1, length)
+for (i in 1:length){
+  conf_widths[i] <- prec_icc(rho = rhos[i], k = 3, n = nrow(acupunc), 
+                             conf.level = 0.95)$conf.width
+}
+
+# Get CI widths for rho using prec_icc()
+# based on my data: k = 3, n = 377
+conf_widths_acu <- rep(-1, length)
+for (i in 1:length){
+  conf_widths_acu[i] <- prec_icc(rho = rhos[i], k = 3, 
+                                 n = nrow(acupunc_acupuncture_only), 
+                                 conf.level = 0.95)$conf.width
+}
+
+# Calculate CI upper and lower bounds
+lower_bounds <- pmax(0, rhos - conf_widths/2)
+upper_bounds <- pmin(1, rhos + conf_widths/2)
+```
+
+```{r}
+# Make a plot
+icc_plot <- ggplot(mapping = aes(x = rhos)) +
+  geom_line(y = upper_bounds, color = "red") +
+  geom_line(y = lower_bounds, color = "blue") +
+  geom_ribbon(aes(ymin = lower_bounds, ymax = upper_bounds), 
+              fill = "grey70", alpha = 0.5) +
+  labs(title = "ICC confidence intervals when n = 377, k = 3", 
+       x = "Intraclass correlation coefficient [ICC]", 
+       y = "95% confidence interval for ICC")
+icc_plot
+```
+```{r}
+widths <- upper_bounds - lower_bounds
+
+icc_plot2 <- ggplot(mapping = aes(x = rhos)) +
+  geom_line(mapping = aes(y = conf_widths)) +
+  geom_line(mapping = aes(y = conf_widths_acu, color="red")) +
+  #geom_line(mapping = aes(y = widths)) +
+  labs(title = "Width of ICC confidence interval when n = 377, k = 3", 
+       x = "Intraclass correlation coefficient [ICC]", 
+       y = "Width of 95% confidence interval for ICC")
+icc_plot2
+```
+
+# Part 2: Draft of Write-up
+
+## 2.1 Sample size calculation
+
+The original protocol's sample size calculation found that with alpha = 5% and power = 90%, 288 patients would be needed to be evaluated (Vickers 1999). The researchers then assumed a 25% drop-out rate and calculated that they would need to randomize 394 patients, which was then rounded up to 400.
+
+The protocol’s sample size calculation can be closely reconstructed using a pooled standard deviation and `pwr.t.test()`. The original calculation assumed a control mean of 30 with standard deviation 53 and an acupuncture mean of 52 with standard deviation 64 based on previous research. Using the pooled standard deviation, $SD_p = \sqrt{(53^2+64^2)/2}=58.81$, the standardized mean difference was $d=(52-30)/58.81=0.374$. Using `pwr.t.test()` with a two-sided α of 0.05 and 90% power produced a required sample size of 151 subjects per arm, or 302 subjects in total. Accounting for a 25% drop-out rate, a total of 404 patients would need to be randomized.
+
+These results differ slightly from the original paper's, because there are barriers to exactly reproducing the original analysis. Firstly, the original researchers did not state how sample size was calculated, so it is possible that they used an approach other than the t-test. Additionally, accounting for a 25% drop-out rate on 288 required evaluable subjects results in 384 subjects to be randomized, not 394 as stated in the protocol. It is possible that the reported 394 is a typo. Either way this calls into question the reliability of other figures reported in the protocol.
+
+## 2.2 ICC analysis
+
+It is beyond the scope of this research to conduct a simulation-based investigation into power and sample size for a mixed model. However, the mixed model analysis will output an intraclass correlation coefficient (ICC), so confidence intervals for the ICC are explored below.
+
+```{r}
+icc_plot
+```
+
+Based on the available trial data, the mixed model analysis will involve n = 337 migraine patients and k = 3 repeated measures. The above chart can be used to determine a 95% confidence interval around the fitted ICC determined by the model.
+

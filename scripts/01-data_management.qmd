@@ -1,7 +1,16 @@
 ---
 title: "Data Management"
 author: "Kiera Murray"
-format: pdf
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-fold: false
+    fig-width: 6
+    fig-height: 4
+    toc: true
+    toc-depth: 4
+    toc-location: left
 ---
 
 # Setup

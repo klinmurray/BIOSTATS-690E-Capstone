@@ -1,59 +1,97 @@
 ---
 title: "Exploratory Data Analysis"
 author: "Kiera Murray"
-format: html
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-fold: false
+    fig-width: 6
+    fig-height: 4
+    toc: true
+    toc-depth: 4
+    toc-location: left
 ---
 
-# Part 1: EDA on the original data
+# Setup
 
 ```{r}
-# Summarize the original data
-summary(acupunc_full)
+# Load packages
+pacman::p_load(tidyverse, knitr, pacman, grateful, here, usethis)
 ```
 
 ```{r}
-# How many patients to each acupuncturist?
+# Set blank slate
+usethis::use_blank_slate(scope = "user")
 
+# Citations
+grateful::cite_packages(pkgs='Session', output='paragraph', out.dir='.')
+print(paste("operating system: ", sessionInfo()$running))
+
+# Check working directory
+here()
+```
+# Part 1: EDA on the original data (all headache types)
+
+## General summary
+
+```{r}
+# Summarize the original data
+load(here("data", "processed", "acupunc_full.RData"))
+summary(acupunc_full)
+```
+
+## How many patients to each acupuncturist?
+
+```{r}
 # calculate and print
 patients_per_acu_full <- acupunc_full %>% 
-  filter(group == "acupuncture") %>%  # consider only patients who received acupuncture
+  # consider only patients who received acupuncture:
+  filter(group == "acupuncture") %>%  
   group_by(acupuncturist) %>% summarize(n_patients = n())
-patients_per_acu_full
+kable(patients_per_acu_full)
 
 # quantiles
 quantile(patients_per_acu_full$n_patients)
 ```
+
 12 total acupuncturists, ranging from 1 to 45 patients per acupuncturist.
 
-```{r}
-# How many patients to each GP?
+## How many patients to each GP?
 
+```{r}
 # calculate and print
 patients_per_gp_full <- acupunc_full %>% 
   group_by(gp) %>% summarize(n_patients = n())
-patients_per_gp_full
+kable(patients_per_gp_full)
 
 # quantiles
 quantile(patients_per_gp_full$n_patients)
 ```
+
 36 total GPs, ranging from 1 to 43 patients per GP.
+
+## How many patients by sex and headache type?
 
 ```{r}
 # How many patients by sex and headache type?
-acupunc_full %>% group_by(sex, migraine) %>% summarize(n())
+sexheadache <- acupunc_full %>% 
+  group_by(sex, migraine) %>% summarize(n())
+kable(sexheadache)
 ```
 
-
-
-# Part 2: Univariate analysis on the migraine-only data
+# Part 2: EDA on the migraine-only data
 
 ## General summary
+
 ```{r}
 # Summarize the data
+load(here("data", "processed", "acupunc.RData"))
 summary(acupunc)
 ```
 
 ## Acupuncturist breakdown: numbers of patients and GPs
+
 ```{r}
 # How many patients and GPs to each acupuncturist?
 patients_per_acu <- acupunc %>% 
@@ -70,8 +108,9 @@ patients_per_acu <- acupunc %>%
   summarize(n_patients = sum(obs), n_GPs = n())
 
 # View results
-patients_per_acu
+kable(patients_per_acu)
 ```
+
 ```{r}
 # Quantiles of n_patients per acupuncturist
 quantile(patients_per_acu$n_patients)
@@ -84,20 +123,99 @@ quantile(patients_per_acu$n_GPs)
 
 12 total acupuncturists, ranging from 1 to 42 patients per acupuncturist and 1 to 5 GPs per acupuncturist.
 
-
 ## GP breakdown: numbers of patients (total and per group) and assigned acupuncturist
+
 ```{r}
 # How many patients to each GP?
 patients_per_gp <- acupunc %>% 
-  group_by(gp, acupuncturist) %>% summarize(n_patients = n())
+  
+  # get number of patients per GP and group, keeping the assigned acup'ist column
+  rename(assigned_acupist = acupuncturist) %>% # more informative column name
+  group_by(gp, assigned_acupist, group) %>% 
+  summarize(n_patients = n()) %>%
+  
+  # create columns for number of patients per treatment group
+  pivot_wider(names_from = group, values_from = n_patients) %>% 
+  rename(n_patients_acup = acupuncture) %>% 
+  rename(n_patients_control = control) %>% 
+  # replace NAs with 0s:
+  mutate(n_patients_acup = replace_na(n_patients_acup, 0)) %>% 
+  mutate(n_patients_control = replace_na(n_patients_control, 0)) %>% 
 
-patients_per_gp
+  # create a column for total number of patients (per GP)
+  mutate(n_patients_total = sum(n_patients_acup, n_patients_control))
 
+# View results
+kable(patients_per_gp)
 ```
-35 total GPs, ranging from 1 to 41 patients per GP.
 
+```{r}
+# Quantiles of total number of patients per GP
+quantile(patients_per_gp$n_patients_total)
+```
 
+```{r}
+# Quantiles of acupuncture group patients per GP
+quantile(patients_per_gp$n_patients_acup)
+```
 
+```{r}
+# Quantiles of control group patients per GP
+quantile(patients_per_gp$n_patients_control)
+```
 
+35 total GPs, ranging from 1 to 41 total patients per GP, with 0-20 acupuncture patients and 0-21 control patients.
 
+### Do GPs have an even split between acupuncture and control patients?
 
+```{r}
+patients_per_gp_uneven <- patients_per_gp %>% 
+  # look at only GPs with an uneven split:
+  filter(abs(n_patients_acup - n_patients_control) > 1) %>% 
+  # which group is bigger?
+  mutate(acup_greater = n_patients_acup > n_patients_control)
+
+kable(patients_per_gp_uneven)
+```
+
+Most GPs have an even split between acupuncture and control patients (defined as a difference of 0 or 1 between the group sizes). However, of those with an uneven split, most have more patients in the acupuncture group. Overall, there are 11 more patients total in the acupuncture group than in the control group.
+
+This 11-person difference is similar to the difference in groups before removing tension-type patients (9 more people in acupuncture). Furthermore, the publicly available data includes all 401 patients who were randomized, including those missing follow-up data. Therefore, I conclude that the disparity in acupuncture vs. control group numbers was present at the time of randomization and is not a result of my data processing.
+
+## Breakdown by treatment group
+
+### Categorical variable (patient sex)
+
+```{r}
+# patient count by sex and treatment group
+sextreatment <- acupunc %>% 
+  group_by(group, sex) %>% summarize(n = n())
+kable(sextreatment)
+```
+
+```{r}
+# patient sex percentages
+print(paste("total % female:", round(100*(165+153)/(165+29+153+30), 2)))
+print(paste("acupuncture % female:", round(100*(165)/(165+29), 2)))
+print(paste("control % female:", round(100*(153)/(153+30), 2)))
+```
+
+### Numerical variables
+
+```{r}
+# Keep only numerical variables
+acupunc_numerical <- acupunc %>% 
+  select(group, age, chronicity, pk1, pk2, pk5, f1, f2, f5)
+
+# Filter by treatment group
+acupunc_numerical_acupuncture <- acupunc_numerical %>% 
+  filter(group == "acupuncture")
+acupunc_numerical_control <- acupunc_numerical %>% 
+  filter(group == "control")
+
+# Summarize the acupuncture patients
+summary(acupunc_numerical_acupuncture)
+
+# Summarize the control patients
+summary(acupunc_numerical_control)
+```
