@@ -1,7 +1,16 @@
 ---
 title: "Power Calculation"
 author: "Kiera Murray"
-format: pdf
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-fold: false
+    fig-width: 6
+    fig-height: 4
+    toc: true
+    toc-depth: 4
+    toc-location: left
 ---
 
 # Part 1: Coding & Statistical Analysis
@@ -10,38 +19,13 @@ format: pdf
 
 ```{r}
 # Load packages
-library(pwr)
-library(presize)
-library(tidyverse)
+pacman::p_load(tidyverse, pwr, presize, pacman, grateful, here, usethis)
 ```
 
 ```{r}
 # Load data
-load("acupuncture_data_reduced.RData")
-acupunc <- data
-
-# Recode certain variables as factor
-acupunc$sex <- factor(data$sex, 
-                levels = c(1, 0), 
-                labels = c("female", "male"))
-acupunc$migraine <- factor(data$migraine, 
-                levels = c(1, 0), 
-                labels = c("migraine", "tension-type"))
-acupunc$group <- factor(data$group, 
-                levels = c(1, 0), 
-                labels = c("acupuncture", "control"))
-acupunc$acupuncturist <- factor(data$acupuncturist, 
-                levels = c(1,2,3,4,5,6,7,8,9,10,11,12), 
-                labels = c("1","2","3","4","5","6","7","8","9","10","11","12"))
-gp_int <- seq(min(data$practice_id), max(data$practice_id))
-gp_str <- as.character(gp_int)
-acupunc$practice_id <- factor(data$practice_id, 
-                levels = gp_int, 
-                labels = gp_str)
-
-# Keep only migraine patients
-analysis_data <- acupunc %>% 
-  filter(migraine == "migraine") # exclude 24 patients with tension-type headache
+load(here("data", "processed", "acupunc.RData"))
+summary(acupunc)
 ```
 
 ## 1.2 Recreating the original paper's power analysis

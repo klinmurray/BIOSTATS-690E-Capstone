@@ -1,0 +1,40 @@
+---
+title: "Modeling"
+author: "Kiera Murray"
+date: last-modified
+format:
+  html:
+    embed-resources: true
+    code-fold: false
+    fig-width: 6
+    fig-height: 4
+    toc: true
+    toc-depth: 4
+    toc-location: left
+---
+
+# Setup
+
+```{r}
+# Load packages
+pacman::p_load(tidyverse, pacman, grateful, here, usethis)
+```
+
+```{r}
+# Set blank slate
+usethis::use_blank_slate(scope = "user")
+
+# Citations
+grateful::cite_packages(pkgs='Session', output='paragraph', out.dir='.')
+print(paste("operating system: ", sessionInfo()$running))
+
+# Check working directory
+here()
+```
+
+# Part 1: Replicating the original ANCOVA analysis
+
+
+
+
+
