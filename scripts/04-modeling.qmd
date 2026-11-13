@@ -17,7 +17,8 @@ format:
 
 ```{r}
 # Load packages
-pacman::p_load(tidyverse, pacman, grateful, here, usethis)
+pacman::p_load(tidyverse, lme4, lmerTest, lmtest, 
+               pacman, grateful, here, usethis)
 ```
 
 ```{r}
@@ -32,7 +33,401 @@ print(paste("operating system: ", sessionInfo()$running))
 here()
 ```
 
-# Part 1: Replicating the original ANCOVA analysis
+# Replicating the original ANCOVA analysis
+
+## Using the original dataset
+
+```{r}
+# Load data
+load(here("data", "processed", "acupunc_full.RData"))
+summary(acupunc_full)
+```
+
+Outcome variable: `pk5` (headache score at 1-year follow-up)
+
+Main predictor variable: treatment `group`
+
+Covariates: `age`, `sex`, `migraine` (migraine vs. tension-type headache), `chronicity` (years with headache disorder), `pk1` (baseline headache score)
+
+```{r}
+# Fit the model:
+ancova_model <- lm(pk5 ~ group + age + sex + migraine + chronicity + pk1, 
+                   data = acupunc_full) 
+summary(ancova_model)
+```
+This matches the paper's finding: "Scores fell by 34% in the acupuncture group compared with 16% in controls (P = 0.0002)."
+
+Let's check if the reduction percentages match too:
+
+```{r}
+# Calculate average scores for the acupuncture group
+acupunc_full_acu <- acupunc_full %>% filter(group == "acupuncture") %>% 
+  filter(!is.na(pk5)) # keep only people with non-missing 1-year followup
+acu_baseline <- mean(acupunc_full_acu$pk1)
+acu_final <- mean(acupunc_full_acu$pk5)
+
+# Calculate average scores for the control group
+acupunc_full_ctrl <- acupunc_full %>% filter(group == "control") %>% 
+  filter(!is.na(pk5)) # keep only people with non-missing 1-year followup
+ctrl_baseline <- mean(acupunc_full_ctrl$pk1)
+ctrl_final <- mean(acupunc_full_ctrl$pk5)
+
+# Calculate and print reduction percentages
+print(paste("Reduction in acupuncture group:", 
+      round(100*(1 - acu_final/acu_baseline), 1), "percent"))
+print(paste("Reduction in control group:", 
+      round(100*(1 - ctrl_final/ctrl_baseline), 1), "percent"))
+```
+
+These values also match the paper's reported results.
+
+## Using only migraine patients (new analysis)
+
+If we run the same analysis on our reduced dataset (migraine patients only), how do the results change?
+
+```{r}
+# Load data
+load(here("data", "processed", "acupunc.RData"))
+summary(acupunc)
+```
+
+Outcome variable: `pk5` (headache score at 1-year follow-up)
+
+Main predictor variable: treatment `group`
+
+Covariates: `age`, `sex`, `chronicity` (years with headache disorder), `pk1` (baseline headache score)
+
+Note that `migraine` has been removed as a covariate since it is now redundant.
+
+```{r}
+# Fit the model:
+ancova_model_migraine <- lm(pk5 ~ group + age + sex + chronicity + pk1, 
+                            data = acupunc) 
+summary(ancova_model_migraine)
+```
+
+The new p-value on treatment effect is 0.000157, which is basically the same as the original 0.000221.
+
+Let's check the new reduction percentages:
+
+```{r}
+# Calculate average scores for the acupuncture group
+acupunc_acu <- acupunc %>% filter(group == "acupuncture") %>% 
+  filter(!is.na(pk5)) # keep only people with non-missing 1-year followup
+acu_baseline_migraine <- mean(acupunc_acu$pk1)
+acu_final_migraine <- mean(acupunc_acu$pk5)
+
+# Calculate average scores for the control group
+acupunc_ctrl <- acupunc %>% filter(group == "control") %>% 
+  filter(!is.na(pk5)) # keep only people with non-missing 1-year followup
+ctrl_baseline_migraine <- mean(acupunc_ctrl$pk1)
+ctrl_final_migraine <- mean(acupunc_ctrl$pk5)
+
+# Calculate and print reduction percentages
+print(paste("Reduction in acupuncture group:", 
+      round(100*(1 - acu_final_migraine/acu_baseline_migraine), 1), 
+      "percent"))
+print(paste("Reduction in control group:", 
+      round(100*(1 - ctrl_final_migraine/ctrl_baseline_migraine), 1), 
+      "percent"))
+```
+
+These are extremely similar to the original percentages of 33.9% and 16.4% respectively.
+
+In conclusion, removing tension-type patients doesn't seem to change the model results. This may be because tension-type patients made up only 6% of the original sample.
+
+# Mixed model with GP and patient effects
+
+## Step 1: Simple model
+
+We now begin our main analysis. Before adding random effects with clustering, we'll start by finding the optimal simple model for the other variables.
+
+Outcome variable: `score`
+
+Main predictor variables: `group`, `time`
+
+Covariates: `age`, `sex`, `chronicity`
+
+### Data setup
+
+```{r}
+# Reshape data to have numeric columns "time" and "score" instead of pk1 etc.
+acupunc_long <- acupunc %>% 
+  pivot_longer(cols = c(pk1, pk2, pk5), 
+               names_to = "pk", values_to = "score") %>% 
+  mutate(time = case_when(
+    pk == "pk1" ~ 0,
+    pk == "pk2" ~ 3,
+    pk == "pk5" ~ 12,
+    .default = NA # value when no above condition is matched
+  ))
+
+# Create a categorical time variable
+acupunc_long$time_cat <- factor(acupunc_long$pk, 
+                                levels = c("pk1", "pk2", "pk5"), 
+                                labels = c("pk1", "pk2", "pk5"))
+
+# Drop redundant variable `pk`
+acupunc_long <- acupunc_long %>% select(-pk)
+
+# View the reshaped data
+summary(acupunc_long)
+```
+
+### Choosing the best simple model
+
+Should time be numeric or categorical? Address this question with a likelihood ratio test.
+
+```{r}
+# Simple model with numerical time
+simple_num <- lm(score ~ group + time + age + sex + chronicity, 
+                 data = acupunc_long)
+
+# Simple model with categorical time (pk)
+simple_cat <- lm(score ~ group + time_cat + age + sex + chronicity, 
+                 data = acupunc_long)
+
+# Likelihood ratio test
+lrtest(simple_num, simple_cat)
+```
+With a p-value of 0.003, it looks like the categorical time model is significantly better.
+
+Should there be an interaction between time and group? Address this question with a likelihood ratio test. Build on the already established categorical time model.
+
+```{r}
+# Simple model with no interactions
+simple_noint <- lm(score ~ group + time_cat + age + sex + chronicity, 
+                   data = acupunc_long)
+
+# Simple model with time*group interaction
+simple_int <- lm(score ~ (group * time_cat) + age + sex + chronicity, 
+                 data = acupunc_long)
+
+# Likelihood ratio test
+lrtest(simple_noint, simple_int)
+```
+With a p-value of 0.1, it looks like the interaction model might potentially be better than the no-interaction model. I'll keep the interaction for now, and see if it becomes more or less significant when I add random effects.
+
+Therefore, our best simple model is:
+
+```{r}
+summary(simple_int)
+```
+
+## Step 2: Patient effect
+
+Next, we'll add a random effect for the individual patient. This allows for clustering within person, i.e. all observations from the same person will be correlated. 
+
+Outcome variable: `score`
+
+Main predictor variables: `group`, `time_cat` (categorical time)
+
+Clustering: `id` (patient)
+
+Covariates: `age`, `sex`, `chronicity`
+
+Do we need a random slope and intercept for patient, or is just a random intercept enough? Investigate with a likelihood ratio test.
+
+### Random intercept for Patient ID
+```{r}
+# Fit the slopes-only model
+lmm_id_intercept <- lmer(score ~ (group * time_cat) + age + sex + chronicity + 
+                           (1 | id), data = acupunc_long)
+summary(lmm_id_intercept)
+```
+
+### Random slope and intercept for Patient ID
+
+It turns out that there aren't enough degrees of freedom to fit random slopes (using categorical time) for every patient!
+
+```{r}
+#| eval: false
+# Try to fit the slopes-and-intercepts model
+lmm_id_slope <- lmer(score ~ (group * time_cat) + age + sex + chronicity + 
+                       (time_cat | id), data = acupunc_long)
+```
+
+`Error: number of observations (=969) <= number of random effects (=1131) for term (time_cat | id); the random-effects parameters and the residual variance (or scale parameter) are probably unidentifiable`
+
+Instead, we can fit a slopes-and-intercepts model using numeric time, and compare it to its intercepts-only counterpart.
+
+```{r}
+# Fit the slopes-and-intercepts model with numeric time
+lmm_id_slope <- lmer(score ~ (group * time) + age + sex + chronicity + 
+                       (time | id), data = acupunc_long)
+summary(lmm_id_slope)
+```
+
+### Choosing the best Patient model
+
+Use a likelihood ratio test to compare the numeric time models. Use ML fit (`REML = FALSE`) for a likelihood ratio test.
+
+```{r}
+# Refit the above models using ML and numeric time
+lmm_id_intercept_ml <- lmer(score ~ (group * time) + age + sex + chronicity +
+                              (1 | id), data = acupunc_long, REML = FALSE)
+lmm_id_slope_ml <- lmer(score ~ (group * time) + age + sex + chronicity + 
+                          (time | id), data = acupunc_long, REML = FALSE)
+
+# Likelihood ratio test
+lrtest(lmm_id_intercept_ml, lmm_id_slope_ml)
+```
+With a p-value of 0.6, it looks like the slopes-and-intercepts model is not significantly better than the intercepts-only model. Therefore, we conclude that the best patient effect model is intercepts-only with categorical time.
+
+## Step 3: GP effect
+
+Next, we'll add a random effect for the GP. Build on the already established patient-clustering model. Note that patient is nested within GP.
+
+Outcome variable: `score`
+
+Main predictor variables: `group`, `time_cat`
+
+Clustering: `gp`, `id`
+
+Covariates: `age`, `sex`, `chronicity`
+
+Do we need a random slope and intercept for GP, or is just a random intercept enough? Investigate with a likelihood ratio test.
+
+### Random intercept for GP
+```{r}
+# Fit the slopes-only model
+lmm_gp_intercept <- lmer(score ~ (group * time_cat) + age + sex + chronicity + 
+                           (1 | gp) + (1 | gp:id), data = acupunc_long)
+summary(lmm_gp_intercept)
+```
+
+### Random slope and intercept for GP
+```{r}
+# Fit the slopes-and-intercepts model 
+lmm_gp_slope <- lmer(score ~ (group * time_cat) + age + sex + chronicity + 
+                       (time_cat | gp) + (1 | gp:id), data = acupunc_long)
+summary(lmm_gp_slope)
+```
+
+### Choosing the best GP model
+
+Use a likelihood ratio test. Use ML fit (`REML = FALSE`) for a likelihood ratio test.
+
+```{r}
+# Refit the above models using ML
+lmm_gp_intercept_ml <- lmer(score ~ (group * time_cat) + age + sex + 
+                              chronicity + (1 | gp) + (1 | gp:id), 
+                            data = acupunc_long, REML = FALSE)
+lmm_gp_slope_ml <- lmer(score ~ (group * time_cat) + age + sex + 
+                          chronicity + (time_cat | gp) + (1 | gp:id), 
+                        data = acupunc_long, REML = FALSE)
+
+# Likelihood ratio test
+lrtest(lmm_gp_intercept_ml, lmm_gp_slope_ml)
+```
+With a p-value of 1, the random slopes model is not significantly better. Therefore, we conclude that the best GP effect model is intercepts-only.
+
+## Step 4: Model refinement
+
+Our current best model is
+
+```{r}
+summary(lmm_gp_intercept)
+```
+
+However, a number of variables - group (main effect), age, sex, and chronicity - are not significant. Do we really need them in the model? Investigate with a likelihood ratio test.
+
+```{r}
+# Fit a model without non-significant terms
+lmm_gp_intercept_reduced_ml <- lmer(score ~ time_cat + group:time_cat + 
+                                      (1 | gp) + (1 | gp:id), 
+                                    data = acupunc_long, REML = FALSE)
+
+# Likelihood ratio test
+lrtest(lmm_gp_intercept_reduced_ml, lmm_gp_intercept_ml)
+```
+
+
+## Step 5: Interpretation
+
+```{r}
+# Summary of best model
+summary(lmm_gp_intercept)
+```
+
+```{r}
+blups <- ranef(lmm_gp_intercept)
+patient_blups_vector <- unlist(blups[1])
+gp_blups_vector <- unlist(blups[2])
+
+patient_blups <- tibble(
+  id = as.factor(str_extract(names(patient_blups_vector), "\\d+$")),
+  value = as.numeric(patient_blups_vector)
+)
+
+gp_blups <- tibble(
+  id = as.factor(str_extract(names(gp_blups_vector), "\\d+$")),
+  value = as.numeric(gp_blups_vector)
+)
+
+# NOTE: "\\d+$" means "match 1 or more digits at the end of the string"
+
+```
+
+```{r}
+#| eval: false
+
+gp_predictions <- acupunc_long %>% 
+  select(id, gp, group, time_cat, score) %>% 
+  
+  mutate(intercept = 22.023490) %>% 
+  mutate(intercept = 22.023490) %>% 
+
+  4.332825
+  left_join(patient_blups, by = "id") %>% 
+  rename(id_eff = value)
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#| eval: false
+
+blups <- ranef(lmm_gp_intercept)
+patient_blups <- unlist(blups[1])
+gp_blups <- unlist(blups[2])
+```
+
+```{r}
+
+```
+
+
+```{r}
+#| eval: false
+
+blups <- ranef(lmm_gp_intercept)
+blups_vec <- unlist(blups)
+blups_vectors <- split(blups_vec, cut(seq_along(blups_vec), 3, labels = FALSE))
+```
+```{r}
+#| eval: false
+
+vals <- unlist(blups)
+hist(vals[1:35])
+```
+
+
+
 
 
 
