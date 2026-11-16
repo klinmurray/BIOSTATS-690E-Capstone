@@ -132,7 +132,7 @@ print(paste("Reduction in control group:",
       "percent"))
 ```
 
-These are extremely similar to the original percentages of 33.9% and 16.4% respectively.
+These are similar to the original percentages of 33.9% and 16.4% respectively.
 
 In conclusion, removing tension-type patients doesn't seem to change the model results. This may be because tension-type patients made up only 6% of the original sample.
 
@@ -176,7 +176,7 @@ summary(acupunc_long)
 
 ### Choosing the best simple model
 
-Should time be numeric or categorical? Address this question with a likelihood ratio test.
+Should time be numeric or categorical? Address this question with a likelihood ratio test. 
 
 ```{r}
 # Simple model with numerical time
@@ -206,7 +206,7 @@ simple_int <- lm(score ~ (group * time_cat) + age + sex + chronicity,
 # Likelihood ratio test
 lrtest(simple_noint, simple_int)
 ```
-With a p-value of 0.1, it looks like the interaction model might potentially be better than the no-interaction model. I'll keep the interaction for now, and see if it becomes more or less significant when I add random effects.
+With a p-value of 0.09, it looks like the interaction model might potentially be better than the no-interaction model. I'll keep the interaction for now, and see if it becomes more or less significant when I add random effects.
 
 Therefore, our best simple model is:
 
@@ -334,102 +334,334 @@ However, a number of variables - group (main effect), age, sex, and chronicity -
 
 ```{r}
 # Fit a model without non-significant terms
-lmm_gp_intercept_reduced_ml <- lmer(score ~ time_cat + group:time_cat + 
+lmm_gp_intercept_reduced_ml <- lmer(score ~ (group * time_cat) + 
                                       (1 | gp) + (1 | gp:id), 
                                     data = acupunc_long, REML = FALSE)
 
 # Likelihood ratio test
 lrtest(lmm_gp_intercept_reduced_ml, lmm_gp_intercept_ml)
 ```
+With a p-value of 0.28, it looks like the full model is not significantly better than the reduced model. Therefore, our best model is:
 
+```{r}
+lmm_gp <- lmer(score ~ (group * time_cat) + (1 | gp) + (1 | gp:id), 
+               data = acupunc_long, REML = FALSE)
+summary(lmm_gp)
+```
+
+**NOTE:** I don't know how to get rid of the `groupcontrol` (baseline in control group) variable. I tried refitting with `time_cat + group:time_cat` but that just creates a different variable for baseline in the control group. Either way, the control baseline isn't significant - which makes sense, as the groups were randomized to be as similar as possible at baseline.
 
 ## Step 5: Interpretation
 
+### Model predictions
+
+To begin interpretation, I want to obtain the model's estimated score for each (person, time) pair, and compare to the actual score. As an exercise in my own understanding, I attempt to manually obtain these predicted values below.
+
+Model estimate = intercept + group effect + time effect + group*time interaction + person effect + GP effect
+
+Begin by obtaining the fixed effect estimates (from model summary output):
 ```{r}
-# Summary of best model
-summary(lmm_gp_intercept)
+# Fixed effect estimates 
+Intercept_est <- 25.6640
+groupcontrol_est <- 1.9759 # not significant
+time_catpk2_est <- -6.9533
+time_catpk5_est <- -8.7103
+groupcontrol_time_catpk2_est <- 4.1720 
+groupcontrol_time_catpk5_est <- 4.4106
 ```
 
+Next, obtain the random effect estimates (BLUPs):
 ```{r}
-blups <- ranef(lmm_gp_intercept)
-patient_blups_vector <- unlist(blups[1])
-gp_blups_vector <- unlist(blups[2])
+# Get BLUP values from the model
+blups <- ranef(lmm_gp)
 
-patient_blups <- tibble(
-  id = as.factor(str_extract(names(patient_blups_vector), "\\d+$")),
-  value = as.numeric(patient_blups_vector)
-)
+# Put GP BLUPs in a clean dataframe
+gp_blups <- blups$gp %>%
+  rownames_to_column(var = "gp") %>%
+  rename(gp_blup = `(Intercept)`) %>%
+  mutate(gp = as.factor(gp))
 
-gp_blups <- tibble(
-  id = as.factor(str_extract(names(gp_blups_vector), "\\d+$")),
-  value = as.numeric(gp_blups_vector)
-)
-
-# NOTE: "\\d+$" means "match 1 or more digits at the end of the string"
-
+# Put patient BLUPs in a clean dataframe
+patient_blups <- blups$`gp:id` %>%
+  rownames_to_column(var = "gp_id") %>%
+  rename(patient_blup = `(Intercept)`) %>%
+  separate(gp_id, into = c("gp", "id"), sep = "\\:", remove = FALSE) %>%
+  mutate(id = as.factor(id)) %>% 
+  select(id, patient_blup) # keep only ID and BLUP columns
 ```
 
+Manually calculate the model predictions:
 ```{r}
-#| eval: false
-
-gp_predictions <- acupunc_long %>% 
-  select(id, gp, group, time_cat, score) %>% 
+# Create a dataframe to store preducted and actual data
+gp_predictions <- acupunc_long %>%
   
-  mutate(intercept = 22.023490) %>% 
-  mutate(intercept = 22.023490) %>% 
+  # Keep only relevant columns
+  select(id, gp, group, time_cat, time, score) %>% 
+  
+  # Add columns for fixed effects, using previously-obtained estimate values
+  # Includes: intercept (1 col), group (1 col), time (2 cols), 
+  # and group*time interaction (2 cols)
+  mutate(intercept_eff = Intercept_est) %>% 
+  mutate(group_eff = ifelse(group == "control", groupcontrol_est, 0)) %>% 
+  mutate(pk2_eff = ifelse(time_cat == "pk2", time_catpk2_est, 0)) %>% 
+  mutate(pk5_eff = ifelse(time_cat == "pk5", time_catpk5_est, 0)) %>% 
+  mutate(inter2_eff = ifelse(group == "control" & time_cat == "pk2", 
+                             groupcontrol_time_catpk2_est, 0)) %>% 
+  mutate(inter5_eff = ifelse(group == "control" & time_cat == "pk5",
+                             groupcontrol_time_catpk5_est, 0)) %>% 
 
-  4.332825
+  # Add a column for person effect, by joining with the ID BLUPs dataframe
   left_join(patient_blups, by = "id") %>% 
-  rename(id_eff = value)
+  rename(id_eff = patient_blup) %>% 
   
+  # Add a column for GP effect, by joining with the GP BLUPs dataframe
+  left_join(gp_blups, by = "gp") %>% 
+  rename(gp_eff = gp_blup) %>% 
+  
+  # Calculate the estimate for each (person, time) pair
+  mutate(manual_pred_score = intercept_eff + group_eff + pk2_eff + pk5_eff +
+           inter2_eff + inter5_eff + id_eff + gp_eff)
 ```
 
+Validate my calculations by comparing to the true model predictions:
+```{r}
+# Add a column for true model predictions
+gp_predictions$pred_score <- predict(lmm_gp, gp_predictions)
 
+# View data (choose a few relevant columns for better rendering)
+head(gp_predictions[, c("id", "gp", "group", "time_cat", 
+                        "score", "manual_pred_score", "pred_score")])
+```
+It looks like my manual calculations are the same as the true model predictions, within rounding error (to about 3 decimal places). 
 
+Sanity check: do the predicted scores largely line up with the actual scores?
+```{r}
+ggplot(data = gp_predictions, 
+       mapping = aes(x=score, y=pred_score, color = group))+
+  geom_point()
+```
+Yes they do! This looks like a pretty reasonable model.
 
+### Histograms
 
-
-
-
-
-
-
-
-
-
-
+Look at the distributions of BLUP values
 
 ```{r}
-#| eval: false
-
-blups <- ranef(lmm_gp_intercept)
-patient_blups <- unlist(blups[1])
-gp_blups <- unlist(blups[2])
+hist(patient_blups$patient_blup)
+hist(gp_blups$gp_blup)
 ```
+There is much greater variation among the patient BLUPs than the GP BLUPs. This could also be observed with the variances from the model summary. It seems like there is much greater variation among individual people than there is among different GPs. To me this indicates that GP care is highly standardized, and quality of care doesn't depend much on which GP you go to.
+
+The distribution of BLUPs is supposed to be Normal centered on 0, but that doesn't seem to be the case with the patient BLUPs. Could this indicate a problem, or poor model fit?
+
+### Spaghetti plots
+
+#### GP effect
+
+Because GP variation is so small compared to person variation, a random sample may result in GPs that are so similar as to be visually indistinguishable. Therefore, for purposes of visualization, I'll deliberately choose two GPs from opposite ends of the estimated effect spectrum.
 
 ```{r}
+# Create a dataframe to check effect estimates for each GP
+gp_variation <- gp_predictions %>% 
+  filter(!is.na(score)) %>% # to get a practical observation count
+  group_by(gp, gp_eff) %>%
+  summarize(obs = n()) %>% 
+  arrange(gp_eff)
 
+# View GPs with the lowest effect estimates
+head(gp_variation)
+
+# View GPs with the highest effect estimates
+tail(gp_variation)
 ```
-
+Based on the above, I'll use GPs 22 and 28 for my visualization. They have a (relatively) large difference in effect estimates, and a workable number of observations.
 
 ```{r}
-#| eval: false
+# Identify the GPs I want to visualize
+sample_gps <- c(22, 28)
 
-blups <- ranef(lmm_gp_intercept)
-blups_vec <- unlist(blups)
-blups_vectors <- split(blups_vec, cut(seq_along(blups_vec), 3, labels = FALSE))
+# Create a dataframe for visualization
+gp_sample_dat <- gp_predictions %>% 
+  filter(gp %in% sample_gps) %>% 
+  mutate(gp_pred = pred_score - id_eff) # predicted score for this GP
+
+# Create the visualization
+ggplot(gp_sample_dat, aes(x=time))+
+  geom_line(aes(y=score, group=id, color=group, linetype=gp), alpha=0.4)+
+  geom_line(aes(y=gp_pred, group=id, color=group, linetype=gp), linewidth=0.7)+
+  scale_x_continuous(breaks = seq(0, 12, by=3))+
+  theme_minimal()+
+  labs(title = "GP clustering example", 
+       x = "Time (months)", y = "Headache Score")
 ```
+
+The faint lines illustrate individual patients' actual scores, while the bold lines illustrate predicted scores for each (GP, group) combination. 
+
+Patients in the acupuncture group (red) tend to have lower scores than those in the control group, so the predicted scores for the acupuncture group are lower than those for the control group. Similarly, patients from GP 22 (solid line) tend to have lower scores than those from GP 28, so the predicted scores for GP 22 are lower than those for GP 28. However, the GP difference is much smaller than the treatment group difference, indicating that one's treatment group has a much greater effect on their predicted headache score than their GP does.
+
+The predicted acupuncture and control group lines are not parallel, because the model contains a group\*time interaction, allowing the group difference to vary across time. However, the GP lines are parallel because the model lacks a GP\*time interaction, requiring the difference between GPs to be constant across all time points. 
+
+##### Is GP even significant?
+
+Every interpretation analysis so far has indicated an extremely small GP effect compared to person and group effects. Do we even need a GP effect in the model? Investigate with a likelihood ratio test.
+
 ```{r}
-#| eval: false
+# Fit a model without GP effect or covariates
+lmm_id_intercept_reduced_ml <- lmer(score ~ (group * time_cat) + (1 | id), 
+                                    data = acupunc_long, REML = FALSE)
 
-vals <- unlist(blups)
-hist(vals[1:35])
+# Likelihood ratio test
+lrtest(lmm_id_intercept_reduced_ml, lmm_gp_intercept_reduced_ml)
+```
+With a p-value of 0.82, it looks like the model with GP effect is not significantly better than the model without! For now I'll continue analyzing with GP effect since it's important to both the trial design and our current analysis, but I'll come back to this idea in the conclusion.
+
+#### Person effect
+
+Create a spaghetti plot to visualize person effect, as well as how shrinkage estimators work.
+
+```{r}
+# Create a dataframe of potential patients for visualization
+people_sample_dat_ids <- gp_predictions %>% 
+  # Restrict to only acupuncture patients in the largest GP
+  # so that person effect can be isolated:
+  filter(group == "acupuncture", gp == "18") %>% 
+  # Restrict to only patients with complete data
+  # for a less confusing visualization:
+  group_by(id) %>% 
+  summarize(score_sum = sum(score, na.rm = FALSE)) %>% 
+  filter(!is.na(score_sum)) 
+
+# Get a random sample of 3 patients
+set.seed(50)
+sample_ids <- sample(people_sample_dat_ids$id, size = 3, replace = FALSE)
+
+# Create a dataframe for visualization
+people_sample_dat <- gp_predictions %>% 
+  filter(id %in% sample_ids) %>% 
+  mutate(overall_pred = pred_score - id_eff) %>% # predicted score for this group & GP
+  pivot_longer(cols = c(score, pred_score), 
+               names_to = "score_type", values_to = "score_value") %>% 
+  mutate(data = as.factor(ifelse(score_type=="score", "actual", "predicted")))
+
+# Create the visualization
+ggplot(people_sample_dat, aes(x=time)) +
+  geom_line(aes(y=score_value, group=interaction(id, data), 
+                color=id, linetype=data)) +
+  geom_line(aes(y=overall_pred, group=interaction(id, data)), 
+            color="black", linetype="dashed", linewidth=0.7)+
+  scale_x_continuous(breaks = seq(0, 12, by=3))+
+  theme_minimal() +
+  labs(title = "Within-person shrinkage example", 
+       x = "Time (months)", y = "Headache Score")
+```
+Colored lines illustrate data for 3 randomly-chosen acupuncture patients from GP 18, while the bold black line illustrates the predicted scores for a generic acupuncture patient from GP 18.
+
+Every patient's predicted score line is parallel to the generic predicted score line, because the model lacks a patient*time interaction. Furthermore, every patient's predicted score line is closer to the generic prediction line than their actual data line is, which demonstrates the "shrinkage" property of random effects.
+
+
+# Mixed model with Acupuncturist effect
+
+Finally, we move on to estimating the acupuncturist effects. To do this, we must restrict to only patients in the acupuncture treatment group. We'll build on the previously established best GP model.
+
+Outcome variable: `score`
+
+Main predictor variable: `time_cat` (no `group` since it's now redundant)
+
+Clustering: `acupuncturist`, `gp`, `id`
+
+Covariates: None
+
+```{r}
+# Restrict to acupuncture group
+acupunc_long_acu <- acupunc_long %>% filter(group == "acupuncture")
 ```
 
+Do we need a random slope and intercept for Acupuncturist, or is just a random intercept enough? Investigate with a likelihood ratio test.
 
+## Random intercept for Acupuncturist ID
+```{r}
+# Fit the intercept-only model
+lmm_acu_intercept <- lmer(score ~ time_cat + (1 | acupuncturist) + 
+                            (1 | acupuncturist:gp) + (1 | acupuncturist:gp:id), 
+                          data = acupunc_long_acu)
+summary(lmm_acu_intercept)
+```
 
+## Random slope and intercept for Acupuncturist ID
+```{r}
+# Fit the slopes-and-intercepts model
+lmm_acu_slope <- lmer(score ~ time_cat + (time_cat | acupuncturist) + 
+                        (1 | acupuncturist:gp) + (1 | acupuncturist:gp:id), 
+                      data = acupunc_long_acu)
+summary(lmm_acu_slope)
+```
 
+## Choosing the best Acupuncturist model
+```{r}
+# Refit the above models using ML
+lmm_acu_intercept_ml <- lmer(score ~ time_cat + (1 | acupuncturist) + 
+                               (1 | acupuncturist:gp) + 
+                               (1 | acupuncturist:gp:id), 
+                             data = acupunc_long_acu, REML = FALSE)
+lmm_acu_slope_ml <- lmer(score ~ time_cat + (time_cat | acupuncturist) + 
+                           (1 | acupuncturist:gp) + (1 | acupuncturist:gp:id), 
+                         data = acupunc_long_acu,  REML = FALSE)
 
+# Likelihood ratio test
+lrtest(lmm_acu_intercept_ml, lmm_acu_slope_ml)
+```
+With a p-value of 0.96, the random slopes model is not significantly better. 
 
+However, before we decide on our best model, recall that the Acupuncturist intercepts-only model had 0 variance on some random effects. According to `help('isSingular')`, this indicates that the model is too complex for the data to support. Therefore, it may be best to remove the effects with 0 variance; in this case, `acupuncturist` and `acupuncturist:gp`. That said, I don't want to remove the effects that are essential to the trial design. To explore this further, I'll use a likelihood ratio test to determine if a model without Acupuncturist and GP random effects is really no worse.
+
+```{r}
+lmm_acu_simplified_ml <- lmer(score ~ time_cat + (1 | acupuncturist:gp:id), 
+                              data = acupunc_long_acu,  REML = FALSE)
+
+lrtest(lmm_acu_simplified_ml, lmm_acu_intercept_ml)
+```
+With a p-value of 1, the model with GP and Acupuncturist effect is not significantly better than the one without. Interesting! This suggests that all GPs and Acupuncturists are extremely similar to one another, which may support that acupuncture is a standardized science and the treatment effect is unlikely to be a placebo.
+
+Nevertheless, the Acupuncturist and GP effects are important to both the original trial and my current analysis, so I will proceed with the full intercepts-only model.
+
+## Interpretation
+
+To recap, the best Acupuncturist model is:
+```{r}
+summary(lmm_acu_intercept)
+```
+The fixed effects estimates from this model are extremely similar to the ones from our best GP model! This indicates that restricting the acupuncture patients only and adding an acupuncturist effect doesn't change the predicted time effects much. (Previous fixed effect estimates: 25.6640 for `Intercept`, -6.9533 for `time_catpk2`, -8.7103 for `time_catpk5`.)
+
+However there is a major problem with this Acupuncturist model: because the variances on `acupuncturist` and `acupuncturist:gp` are 0, we actually cannot obtain (meaningful) BLUPs! Therefore it is impossible to create histograms or spaghetti plots as I did before.
+
+To address this problem, let's try removing the GP effect, since we found that the GP effect didn't improve the model anyway. Does removing GP free up enough degrees of freedom to estimate an acupuncturist effect?
+
+```{r}
+# Fit a model without GP effect
+lmm_acu_intercept_noGP <- lmer(score ~ time_cat + (1 | acupuncturist) + 
+                                 (1 | acupuncturist:id), 
+                          data = acupunc_long_acu)
+summary(lmm_acu_intercept_noGP)
+```
+Nope, we're still getting `boundary (singular)` and 0 variance on the `acupuncturist` random effect.
+
+As a last-ditch effort, what if we remove the individual patient effects?
+```{r}
+# Fit a model with only acupuncturist effect
+lmm_acu_intercept_reduced <- lmer(score ~ time_cat + (1 | acupuncturist), 
+                          data = acupunc_long_acu)
+summary(lmm_acu_intercept_reduced)
+```
+Finally we get non-0 variance! But I don't want to use this model because we've already shown that the patient effect is important. Additionally, the variance on `acupuncturist` is still small compared to the variance on `id` in previous models, and only slightly larger than the variance on `gp`, further supporting the idea that individual acupuncturists are not much different from each other.
+
+Since it's difficult to estimate the acupuncturist effect, and removing it from the model doesn't result in worse performance, I conclude that there is no meaningful variation among individual acupuncturists, supporting the conclusion that that acupuncture is a standardized science and that the treatment effect is unlikely to be a placebo.
+
+# Conclusion
+
+In conclusion, our mixed model analysis found a highly significant treatment effect, consistent with the original findings from Vickers et al. 
+
+Our repeated measures design allowed us to observe how headache scores change over time in both groups. We found that acupuncture appears to have the greatest effect shortly after treatment (before 3 months), but that even after 3 months, headache scores continue to gradually decrease. 
+
+We also investigated the effects of individual person, GP, and acupuncturist. We found little variation among GP and acupuncturist compared to individual patient, suggesting that both GPs and acupuncturists are highly standardized in terms of the quality of care they provide. This may support the idea that the theraputic effect of acupuncture is due to a physiological mechanism and not a placebo.
 
 
