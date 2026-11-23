@@ -90,7 +90,9 @@ Even the paper is inconsistent, since 288 accounting for 25% drop-out is not 394
 ```
 
 ## 1.3 ICC analysis for my mixed model
+
 ```{r}
+
 acupunc_acupuncture_only <- acupunc %>% 
   filter(group == "acupuncture")
 ```
@@ -103,7 +105,7 @@ length <- 101 # number of points in the CI vector
 rhos <- seq(from=0, to=1, length.out=length) # look at rho values from 0 to 1
 
 # Get CI widths for rho using prec_icc()
-# based on my data: k = 3, n = 377
+# based on my complete migraine data: k = 3, n = 377
 conf_widths <- rep(-1, length)
 for (i in 1:length){
   conf_widths[i] <- prec_icc(rho = rhos[i], k = 3, n = nrow(acupunc), 
@@ -111,7 +113,7 @@ for (i in 1:length){
 }
 
 # Get CI widths for rho using prec_icc()
-# based on my data: k = 3, n = 377
+# based on the acupuncture group only data: k = 3, n = 194
 conf_widths_acu <- rep(-1, length)
 for (i in 1:length){
   conf_widths_acu[i] <- prec_icc(rho = rhos[i], k = 3, 
@@ -119,13 +121,13 @@ for (i in 1:length){
                                  conf.level = 0.95)$conf.width
 }
 
-# Calculate CI upper and lower bounds
+# Calculate CI upper and lower bounds (for complete data only)
 lower_bounds <- pmax(0, rhos - conf_widths/2)
 upper_bounds <- pmin(1, rhos + conf_widths/2)
 ```
 
 ```{r}
-# Make a plot
+# Make a plot for ICC CI (complete migraine data)
 icc_plot <- ggplot(mapping = aes(x = rhos)) +
   geom_line(y = upper_bounds, color = "red") +
   geom_line(y = lower_bounds, color = "blue") +
@@ -137,13 +139,14 @@ icc_plot <- ggplot(mapping = aes(x = rhos)) +
 icc_plot
 ```
 ```{r}
-widths <- upper_bounds - lower_bounds
+# Make a plot for ICC CI widths (both datasets)
 
 icc_plot2 <- ggplot(mapping = aes(x = rhos)) +
-  geom_line(mapping = aes(y = conf_widths)) +
-  geom_line(mapping = aes(y = conf_widths_acu, color="red")) +
-  #geom_line(mapping = aes(y = widths)) +
-  labs(title = "Width of ICC confidence interval when n = 377, k = 3", 
+  geom_line(mapping = aes(y = conf_widths, color = "n = 377 (all)")) +
+  geom_line(mapping = aes(y = conf_widths_acu, color="n = 194 (acupuncture)")) +
+  scale_color_manual(values = c("n = 377 (all)" = "black", "n = 194 (acupuncture)" = "red"),
+                     name = "Sample size (group)") +
+  labs(title = "Width of ICC confidence interval when n = 194 or 377, k = 3", 
        x = "Intraclass correlation coefficient [ICC]", 
        y = "Width of 95% confidence interval for ICC")
 icc_plot2
@@ -164,8 +167,8 @@ These results differ slightly from the original paper's, because there are barri
 It is beyond the scope of this research to conduct a simulation-based investigation into power and sample size for a mixed model. However, the mixed model analysis will output an intraclass correlation coefficient (ICC), so confidence intervals for the ICC are explored below.
 
 ```{r}
-icc_plot
+icc_plot2
 ```
 
-Based on the available trial data, the mixed model analysis will involve n = 337 migraine patients and k = 3 repeated measures. The above chart can be used to determine a 95% confidence interval around the fitted ICC determined by the model.
+Based on the available trial data, the mixed model analysis will involve n = 337 migraine patients and k = 3 repeated measures. (The acupuncturist sub-analysis will involve only n = 194 treatment group patients.) The above chart can be used to determine the width of a 95% confidence interval around the fitted ICC determined by the model.
 
